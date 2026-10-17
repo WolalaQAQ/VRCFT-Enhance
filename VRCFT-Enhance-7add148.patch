@@ -1,9 +1,9 @@
 diff --git a/VRCFaceTracking.Core/Library/UnifiedLibManager.cs b/VRCFaceTracking.Core/Library/UnifiedLibManager.cs
-index fbb578c..d478cff 100644
+index fbb578c..a119e28 100644
 --- a/VRCFaceTracking.Core/Library/UnifiedLibManager.cs
 +++ b/VRCFaceTracking.Core/Library/UnifiedLibManager.cs
 @@ -1,3 +1,4 @@
-+// Modified 2026 by osc90-host-patch contributors: configurable request wait; module reply applied under HostDataSync. See https://github.com/WolalaQAQ/osc90-host-patch
++// Modified 2026 by VRCFT-Enhance contributors: configurable request wait; module reply applied under HostDataSync. See https://github.com/WolalaQAQ/VRCFT-Enhance
  using System.Collections.ObjectModel;
  using System.Diagnostics;
  using System.Reflection;
@@ -43,12 +43,12 @@ index fbb578c..d478cff 100644
              }
              _logger.LogDebug("Thread for {module} ended", module.GetType().Name);
 diff --git a/VRCFaceTracking.Core/MainStandalone.cs b/VRCFaceTracking.Core/MainStandalone.cs
-index d5d9a49..19d83ad 100644
+index d5d9a49..e852621 100644
 --- a/VRCFaceTracking.Core/MainStandalone.cs
 +++ b/VRCFaceTracking.Core/MainStandalone.cs
 @@ -1,4 +1,5 @@
 -﻿using System.Runtime.CompilerServices;
-+﻿// Modified 2026 by osc90-host-patch contributors: timer resolution lease; InternalsVisibleTo for ModuleProcess. See https://github.com/WolalaQAQ/osc90-host-patch
++﻿// Modified 2026 by VRCFT-Enhance contributors: timer resolution lease; InternalsVisibleTo for ModuleProcess. See https://github.com/WolalaQAQ/VRCFT-Enhance
 +using System.Runtime.CompilerServices;
  using Microsoft.Extensions.Logging;
  using VRCFaceTracking.Core.Contracts.Services;
@@ -101,11 +101,11 @@ index d5d9a49..19d83ad 100644
      }
 diff --git b/VRCFaceTracking.Core/OscWaitBudgets.cs b/VRCFaceTracking.Core/OscWaitBudgets.cs
 new file mode 100644
-index 0000000..4134cf6
+index 0000000..7241ff0
 --- /dev/null
 +++ b/VRCFaceTracking.Core/OscWaitBudgets.cs
 @@ -0,0 +1,51 @@
-+﻿// Copyright 2026 osc90-host-patch contributors. Licensed under the Apache License, Version 2.0.
++﻿// Copyright 2026 VRCFT-Enhance contributors. Licensed under the Apache License, Version 2.0.
 +using System.Globalization;
 +
 +namespace VRCFaceTracking.Core;
@@ -157,12 +157,12 @@ index 0000000..4134cf6
 +    }
 +}
 diff --git a/VRCFaceTracking.Core/Sandboxing/IPC/ReplyUpdatePacket.cs b/VRCFaceTracking.Core/Sandboxing/IPC/ReplyUpdatePacket.cs
-index 24843b0..e8309a4 100644
+index 24843b0..2185a5c 100644
 --- a/VRCFaceTracking.Core/Sandboxing/IPC/ReplyUpdatePacket.cs
 +++ b/VRCFaceTracking.Core/Sandboxing/IPC/ReplyUpdatePacket.cs
 @@ -1,4 +1,5 @@
 -﻿using System;
-+﻿// Modified 2026 by osc90-host-patch contributors: completed snapshot publication; expression range starts after BrowOuterUpLeft. See https://github.com/WolalaQAQ/osc90-host-patch
++﻿// Modified 2026 by VRCFT-Enhance contributors: completed snapshot publication; expression range starts after BrowOuterUpLeft. See https://github.com/WolalaQAQ/VRCFT-Enhance
 +using System;
  using System.Collections.Generic;
  using System.Linq;
@@ -211,12 +211,12 @@ index 24843b0..e8309a4 100644
              if ( _contiguousUnifiedData.Expression_Shapes[i] != INVALID_FLOAT)
                  UnifiedTracking.Data.Shapes[i].Weight = _contiguousUnifiedData.Expression_Shapes[i];
 diff --git a/VRCFaceTracking.Core/Services/ParameterSenderService.cs b/VRCFaceTracking.Core/Services/ParameterSenderService.cs
-index 0dbc533..62a5bd5 100644
+index 0dbc533..80c191c 100644
 --- a/VRCFaceTracking.Core/Services/ParameterSenderService.cs
 +++ b/VRCFaceTracking.Core/Services/ParameterSenderService.cs
 @@ -1,4 +1,5 @@
 -﻿using Microsoft.Extensions.Hosting;
-+﻿// Modified 2026 by osc90-host-patch contributors: configurable output wait. See https://github.com/WolalaQAQ/osc90-host-patch
++﻿// Modified 2026 by VRCFT-Enhance contributors: configurable output wait. See https://github.com/WolalaQAQ/VRCFT-Enhance
 +using Microsoft.Extensions.Hosting;
  using VRCFaceTracking.Core.Contracts;
  using VRCFaceTracking.Core.OSC;
@@ -232,11 +232,11 @@ index 0dbc533..62a5bd5 100644
  
 diff --git b/VRCFaceTracking.Core/TimerResolutionLease.cs b/VRCFaceTracking.Core/TimerResolutionLease.cs
 new file mode 100644
-index 0000000..ad357f4
+index 0000000..4950ad2
 --- /dev/null
 +++ b/VRCFaceTracking.Core/TimerResolutionLease.cs
 @@ -0,0 +1,117 @@
-+﻿// Copyright 2026 osc90-host-patch contributors. Licensed under the Apache License, Version 2.0.
++﻿// Copyright 2026 VRCFT-Enhance contributors. Licensed under the Apache License, Version 2.0.
 +using System.Runtime.InteropServices;
 +using Microsoft.Extensions.Logging;
 +
@@ -354,12 +354,12 @@ index 0000000..ad357f4
 +    }
 +}
 diff --git a/VRCFaceTracking.Core/UnifiedTracking.cs b/VRCFaceTracking.Core/UnifiedTracking.cs
-index 4ed409d..46b2074 100644
+index 4ed409d..0359922 100644
 --- a/VRCFaceTracking.Core/UnifiedTracking.cs
 +++ b/VRCFaceTracking.Core/UnifiedTracking.cs
 @@ -1,4 +1,5 @@
 -﻿using VRCFaceTracking.Core.Params;
-+﻿// Modified 2026 by osc90-host-patch contributors: HostDataSync lock around parameter evaluation. See https://github.com/WolalaQAQ/osc90-host-patch
++﻿// Modified 2026 by VRCFT-Enhance contributors: HostDataSync lock around parameter evaluation. See https://github.com/WolalaQAQ/VRCFT-Enhance
 +using VRCFaceTracking.Core.Params;
  using VRCFaceTracking.Core.Params.Data;
  using VRCFaceTracking.Core.Params.Expressions;
@@ -393,12 +393,12 @@ index 4ed409d..46b2074 100644
  }
 \ No newline at end of file
 diff --git a/VRCFaceTracking.ModuleProcess/ModuleProcessMain.cs b/VRCFaceTracking.ModuleProcess/ModuleProcessMain.cs
-index 4bce1ef..2599119 100644
+index 4bce1ef..01bfcfd 100644
 --- a/VRCFaceTracking.ModuleProcess/ModuleProcessMain.cs
 +++ b/VRCFaceTracking.ModuleProcess/ModuleProcessMain.cs
 @@ -1,8 +1,11 @@
 -﻿using System.CommandLine;
-+﻿// Modified 2026 by osc90-host-patch contributors: timer resolution lease; ConcurrentQueue; serialized teardown; snapshot publication. See https://github.com/WolalaQAQ/osc90-host-patch
++﻿// Modified 2026 by VRCFT-Enhance contributors: timer resolution lease; ConcurrentQueue; serialized teardown; snapshot publication. See https://github.com/WolalaQAQ/VRCFT-Enhance
 +using System.CommandLine;
 +using System.Collections.Concurrent;
  using System.Diagnostics;

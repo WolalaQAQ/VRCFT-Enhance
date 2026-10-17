@@ -1,8 +1,10 @@
-# osc90-host-patch
+# VRCFT-Enhance
 
 [English](README.md)
 
-这是一个基于 [VRCFaceTracking](https://github.com/benaclejames/VRCFaceTracking) 的源码补丁，作用是让 VRCFaceTracking 宿主把眼追数据以接近 90 Hz 的频率交给 OSC。它不是 VRCFaceTracking 官方项目，也不提供编译好的程序；需要自己打补丁并构建，然后放进一份独立的 VRCFaceTracking 副本里使用，Steam 版保持原样。
+这是面向 [VRCFaceTracking](https://github.com/benaclejames/VRCFaceTracking) 的非官方补丁。目前的补丁让宿主把眼追数据以接近 90 Hz 的频率交给 OSC：宿主的更新频率可以自己设置，同时修正了几处因此更容易出现的线程同步问题。
+
+它不是 VRCFaceTracking 官方项目，也不提供编译好的程序；需要自己打补丁并构建，然后放进一份独立的 VRCFaceTracking 副本里使用，Steam 版保持原样。
 
 补丁对应 VRCFaceTracking 5.4.5，也就是 Steam 正式版所用的源码提交 [`7add148`](https://github.com/benaclejames/VRCFaceTracking/tree/7add14873e398c4095d06913cdeee7a01fc43fab)（程序集版本 5.4.5.0）。其他版本没有验证过。
 
@@ -55,7 +57,7 @@
 2. 应用补丁（假设补丁文件与 `VRCFaceTracking` 目录在同一层）：
 
    ```powershell
-   git -C VRCFaceTracking apply --ignore-whitespace ..\osc90-host-patch-7add148.patch
+   git -C VRCFaceTracking apply --ignore-whitespace ..\VRCFT-Enhance-7add148.patch
    ```
 
    `--ignore-whitespace` 用来兼容 Git 检出时的不同换行设置。

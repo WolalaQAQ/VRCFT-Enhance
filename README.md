@@ -1,8 +1,10 @@
-# osc90-host-patch
+# VRCFT-Enhance
 
 [中文](README_zh.md)
 
-A source patch for [VRCFaceTracking](https://github.com/benaclejames/VRCFaceTracking) that lets the host pass eye-tracking data to OSC at close to 90 Hz. It is not an official VRCFaceTracking project and ships no binaries: you apply the patch, build it yourself, and run it from a separate copy of VRCFaceTracking, leaving the Steam installation untouched.
+Unofficial patches for [VRCFaceTracking](https://github.com/benaclejames/VRCFaceTracking). The current patch lets the host pass eye-tracking data to OSC at close to 90 Hz by making its update rate configurable, and fixes a few threading issues that show up when it does.
+
+It is not an official VRCFaceTracking project and ships no binaries: you apply the patch, build it yourself, and run it from a separate copy of VRCFaceTracking, leaving the Steam installation untouched.
 
 The patch targets VRCFaceTracking 5.4.5, the source commit used by the Steam release, [`7add148`](https://github.com/benaclejames/VRCFaceTracking/tree/7add14873e398c4095d06913cdeee7a01fc43fab) (assembly version 5.4.5.0). Other versions have not been tested.
 
@@ -55,7 +57,7 @@ You need Windows, [Git](https://git-scm.com/) and the [.NET 10 SDK](https://dotn
 2. Apply the patch (assuming the patch file sits next to the `VRCFaceTracking` folder):
 
    ```powershell
-   git -C VRCFaceTracking apply --ignore-whitespace ..\osc90-host-patch-7add148.patch
+   git -C VRCFaceTracking apply --ignore-whitespace ..\VRCFT-Enhance-7add148.patch
    ```
 
    `--ignore-whitespace` makes the patch apply regardless of Git's line-ending settings at checkout.

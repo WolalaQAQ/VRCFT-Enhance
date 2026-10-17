@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.1] - 2026-10-17
+
+### Changed
+- Rename the repository to VRCFT-Enhance. The patch content is unchanged apart from the repository name in the modification notices.
+
 ## [1.0.0] - 2026-10-17
 
 ### Features
