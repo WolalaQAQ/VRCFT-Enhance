@@ -63,12 +63,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $version = (Get-Content VERSION -Raw).Trim()
           dotnet build upstream\VRCFaceTracking.ModuleProcess\VRCFaceTracking.ModuleProcess.csproj `
-            -c Release -p:Platform=x64
+            -c Release -p:Platform=x64 -p:InformationalVersion="5.4.5.0-vrcft-enhance-$version"
           foreach ($name in 'VRCFaceTracking.Core.dll', 'VRCFaceTracking.ModuleProcess.dll') {
             $path = Join-Path $env:BUILD_OUTPUT $name
             if (-not (Test-Path $path)) { throw "Missing build output: $name" }
-            Write-Host "$name $((Get-Item $path).Length) bytes"
+            Write-Host "$name $((Get-Item $path).Length) bytes $((Get-Item $path).VersionInfo.ProductVersion)"
           }
 
       - name: Package the patched DLLs
