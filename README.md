@@ -4,7 +4,7 @@
 
 Unofficial patches for [VRCFaceTracking](https://github.com/benaclejames/VRCFaceTracking). The current patch lets the host pass eye-tracking data to OSC at close to 90 Hz by making its update rate configurable, and fixes a few threading issues that show up when it does.
 
-It is not an official VRCFaceTracking project and ships no binaries: you apply the patch, build it yourself, and run it from a separate copy of VRCFaceTracking, leaving the Steam installation untouched.
+It is not an official VRCFaceTracking project. The releases contain the patched host DLLs in a zip. The source patch is kept in the repository for anyone who wants to build it themselves.
 
 The patch targets VRCFaceTracking 5.4.5, the source commit used by the Steam release, [`7add148`](https://github.com/benaclejames/VRCFaceTracking/tree/7add14873e398c4095d06913cdeee7a01fc43fab) (assembly version 5.4.5.0). Other versions have not been tested.
 
@@ -43,9 +43,21 @@ The last change affects one setup: if you run only an expression module and no e
 
 The patch modifies 6 official files and adds two new files, `OscWaitBudgets.cs` and `TimerResolutionLease.cs`. Each modified file carries a modification notice on its first line.
 
-## Building
+## Installing into a separate copy
 
-You need Windows, [Git](https://git-scm.com/) and the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). GitHub Actions runs the same steps on every push, applying the patch to `7add148` and building both projects; pushing a `v*` tag publishes a release built from these changelog sections.
+1. Download `VRCFT-Enhance-<version>-7add148.zip` from [Releases](https://github.com/WolalaQAQ/VRCFT-Enhance/releases) and extract it.
+2. Close VRCFaceTracking.
+3. Copy the whole Steam installation folder (by default `C:\Program Files (x86)\Steam\steamapps\common\VRCFaceTracking`) to a new location, for example `%LOCALAPPDATA%\Programs\VRCFaceTracking-Patched`.
+4. Replace `VRCFaceTracking.Core.dll` and `VRCFaceTracking.ModuleProcess.dll` in the copy with the two files from the zip.
+5. Run `VRCFaceTracking.exe` from the copy.
+
+The copy shares modules and settings with the Steam version through `%APPDATA%\VRCFaceTracking`, so there is no need to reinstall modules. Do not run both at the same time. To go back to the official version, launch it from Steam; Steam updates do not touch the copy.
+
+The DLLs are built for VRCFaceTracking 5.4.5 only. Replacing them in another version is untested and may prevent the host from starting.
+
+## Building from source (optional)
+
+You need Windows, [Git](https://git-scm.com/) and the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). GitHub Actions runs these steps on every push, so the patch is known to apply and build before a release is published.
 
 1. Get the official source and check out the matching commit:
 
@@ -68,16 +80,7 @@ You need Windows, [Git](https://git-scm.com/) and the [.NET 10 SDK](https://dotn
    dotnet build VRCFaceTracking\VRCFaceTracking.ModuleProcess\VRCFaceTracking.ModuleProcess.csproj -c Release -p:Platform=x64
    ```
 
-   The two files you need, `VRCFaceTracking.Core.dll` and `VRCFaceTracking.ModuleProcess.dll`, are in `VRCFaceTracking\VRCFaceTracking.ModuleProcess\bin\x64\Release\net10.0-windows10.0.22621.0\win-x64\`.
-
-## Installing into a separate copy
-
-1. Close VRCFaceTracking.
-2. Copy the whole Steam installation folder (by default `C:\Program Files (x86)\Steam\steamapps\common\VRCFaceTracking`) to a new location, for example `%LOCALAPPDATA%\Programs\VRCFaceTracking-Patched`.
-3. Replace `VRCFaceTracking.Core.dll` and `VRCFaceTracking.ModuleProcess.dll` in the copy with the ones you built.
-4. Run `VRCFaceTracking.exe` from the copy.
-
-The copy shares modules and settings with the Steam version through `%APPDATA%\VRCFaceTracking`, so there is no need to reinstall modules. Do not run both at the same time. To go back to the official version, launch it from Steam; Steam updates do not touch the copy.
+   The two files you need, `VRCFaceTracking.Core.dll` and `VRCFaceTracking.ModuleProcess.dll`, are in `VRCFaceTracking\VRCFaceTracking.ModuleProcess\bin\x64\Release\net10.0-windows10.0.22621.0\win-x64\`. That is a Release build; use it the same way as the files in the zip.
 
 ## Setting the waits
 

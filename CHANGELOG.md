@@ -1,9 +1,19 @@
 # Changelog
 
-## [1.0.1] - 2026-10-17
+## [1.0.1] - 2026-10-18
+
+### Features
+- Publish a zip with `VRCFaceTracking.Core.dll` and `VRCFaceTracking.ModuleProcess.dll`, built by CI from this patch, so the host can be updated without a local .NET SDK. The zip also contains `LICENSE` and `INSTALL.txt`.
 
 ### Changed
 - Rename the repository to VRCFT-Enhance. The patch content is unchanged apart from the repository name in the modification notices.
+
+### Design Rationale
+- The DLLs are built on a GitHub runner from the same patch that is kept in the repository, and the workflow refuses to publish if the patch does not apply or the build fails.
+- The patch stays in the repository so the shipped DLLs can be traced back to readable source.
+
+### Notes & Caveats
+- The DLLs only replace the two host files of VRCFaceTracking 5.4.5; other versions are untested.
 
 ## [1.0.0] - 2026-10-17
 

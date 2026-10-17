@@ -1,9 +1,19 @@
 # 更新日志
 
-## [1.0.1] - 2026-10-17
+## [1.0.1] - 2026-10-18
+
+### 新功能
+- 以 zip 形式发布 `VRCFaceTracking.Core.dll` 和 `VRCFaceTracking.ModuleProcess.dll`，由 CI 从本补丁构建，无需本地安装 .NET SDK 即可更新宿主。压缩包内还包含 `LICENSE` 和 `INSTALL.txt`。
 
 ### 变更
 - 仓库更名为 VRCFT-Enhance。除修改声明中的仓库名外，补丁内容没有变化。
+
+### 设计理由
+- DLL 在 GitHub runner 上从仓库内同一份补丁构建；补丁无法应用或构建失败时，工作流不会发布。
+- 补丁保留在仓库中，发布的 DLL 可以追溯到可读的源码。
+
+### 注意事项
+- 这两个 DLL 只替换 VRCFaceTracking 5.4.5 的宿主文件；其他版本没有测试过。
 
 ## [1.0.0] - 2026-10-17
 

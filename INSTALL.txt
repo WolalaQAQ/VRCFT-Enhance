@@ -1,0 +1,73 @@
+VRCFT-Enhance 1.0.1
+Patched VRCFaceTracking 5.4.5 host DLLs
+
+What this is
+------------
+VRCFaceTracking.Core.dll and VRCFaceTracking.ModuleProcess.dll, built from
+VRCFaceTracking commit 7add148 with the patch in this repository.
+
+Install
+-------
+1. Close VRCFaceTracking.
+2. Copy your Steam VRCFaceTracking folder (usually
+   C:\Program Files (x86)\Steam\steamapps\common\VRCFaceTracking) to a new
+   location, for example %LOCALAPPDATA%\Programs\VRCFaceTracking-Patched.
+3. Replace VRCFaceTracking.Core.dll and VRCFaceTracking.ModuleProcess.dll in
+   that copy with the files next to this one.
+4. Start VRCFaceTracking.exe from the copy.
+
+The copy shares modules and settings with the Steam version through
+%APPDATA%\VRCFaceTracking. Do not run both at the same time. To go back to the
+official version, start it from Steam; Steam updates do not touch the copy.
+
+Options
+-------
+The two waits are 4 ms by default. To change them, append to a shortcut's
+Target, for example:
+
+  --osc-poll-ms=4 --osc-output-ms=4
+
+Environment variables VRCFT_OSC_POLL_MS and VRCFT_OSC_OUTPUT_MS work too;
+command-line options take precedence. Values are read at startup.
+
+These DLLs are for VRCFaceTracking 5.4.5 only. Another version is untested and
+may fail to start.
+
+License: Apache License 2.0, see LICENSE. VRCFaceTracking is copyright
+benaclejames; these files are modified copies.
+
+------------------------------------------------------------
+
+VRCFT-Enhance 1.0.1
+打好补丁的 VRCFaceTracking 5.4.5 宿主 DLL
+
+这是什么
+--------
+VRCFaceTracking.Core.dll 和 VRCFaceTracking.ModuleProcess.dll，由 VRCFaceTracking
+提交 7add148 加上本仓库的补丁构建而成。
+
+安装
+----
+1. 关闭 VRCFaceTracking。
+2. 把 Steam 的 VRCFaceTracking 目录（通常为
+   C:\Program Files (x86)\Steam\steamapps\common\VRCFaceTracking）整个复制到新位置，
+   例如 %LOCALAPPDATA%\Programs\VRCFaceTracking-Patched。
+3. 用本文件旁边的两个 DLL 替换该副本里的同名文件。
+4. 运行副本里的 VRCFaceTracking.exe。
+
+副本与 Steam 版共用 %APPDATA%\VRCFaceTracking 里的模块和设置。两者不要同时运行。
+想换回官方版，直接从 Steam 启动即可；Steam 更新不会改动副本。
+
+选项
+----
+两处等待默认为 4 ms。要修改时，在快捷方式的“目标”末尾追加，例如：
+
+  --osc-poll-ms=4 --osc-output-ms=4
+
+也可以使用环境变量 VRCFT_OSC_POLL_MS 和 VRCFT_OSC_OUTPUT_MS；命令行参数优先。
+数值只在启动时读取。
+
+这两个 DLL 只适用于 VRCFaceTracking 5.4.5。其他版本没有测试过，可能无法启动。
+
+许可证：Apache License 2.0，见 LICENSE。VRCFaceTracking 版权归 benaclejames 所有；
+这些文件是修改后的副本。

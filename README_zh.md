@@ -4,7 +4,7 @@
 
 这是面向 [VRCFaceTracking](https://github.com/benaclejames/VRCFaceTracking) 的非官方补丁。目前的补丁让宿主把眼追数据以接近 90 Hz 的频率交给 OSC：宿主的更新频率可以自己设置，同时修正了几处因此更容易出现的线程同步问题。
 
-它不是 VRCFaceTracking 官方项目，也不提供编译好的程序；需要自己打补丁并构建，然后放进一份独立的 VRCFaceTracking 副本里使用，Steam 版保持原样。
+它不是 VRCFaceTracking 官方项目。Release 以 zip 形式提供打好补丁的宿主 DLL；源码补丁仍保留在仓库里，供想自己构建的人使用。
 
 补丁对应 VRCFaceTracking 5.4.5，也就是 Steam 正式版所用的源码提交 [`7add148`](https://github.com/benaclejames/VRCFaceTracking/tree/7add14873e398c4095d06913cdeee7a01fc43fab)（程序集版本 5.4.5.0）。其他版本没有验证过。
 
@@ -43,9 +43,21 @@
 
 补丁修改了 6 个官方文件，新增 `OscWaitBudgets.cs` 和 `TimerResolutionLease.cs` 两个文件。每个被修改的文件第一行都加了修改说明。
 
-## 构建
+## 安装到独立副本
 
-需要 Windows、[Git](https://git-scm.com/) 和 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)。每次推送都会由 GitHub Actions 执行同样的步骤：把补丁应用到 `7add148` 并构建两个项目；推送 `v*` tag 时，会用更新日志中对应版本的内容发布 Release。
+1. 从 [Releases](https://github.com/WolalaQAQ/VRCFT-Enhance/releases) 下载 `VRCFT-Enhance-<版本>-7add148.zip` 并解压。
+2. 关闭 VRCFaceTracking。
+3. 把整个 Steam 安装目录（默认 `C:\Program Files (x86)\Steam\steamapps\common\VRCFaceTracking`）复制到一个新位置，例如 `%LOCALAPPDATA%\Programs\VRCFaceTracking-Patched`。
+4. 用压缩包里的两个文件替换副本里的 `VRCFaceTracking.Core.dll` 和 `VRCFaceTracking.ModuleProcess.dll`。
+5. 运行副本里的 `VRCFaceTracking.exe`。
+
+副本和 Steam 版共用 `%APPDATA%\VRCFaceTracking` 里的模块和设置，不需要重新安装模块。两者不要同时运行。想换回官方版，直接从 Steam 启动即可；Steam 更新也不会改动副本。
+
+这两个 DLL 只适用于 VRCFaceTracking 5.4.5；替换到其他版本没有测试过，可能导致宿主无法启动。
+
+## 自行构建（可选）
+
+需要 Windows、[Git](https://git-scm.com/) 和 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)。每次推送都会由 GitHub Actions 执行同样的步骤，因此发布前补丁一定能应用并构建成功。
 
 1. 获取官方源码并切换到对应提交：
 
@@ -68,16 +80,7 @@
    dotnet build VRCFaceTracking\VRCFaceTracking.ModuleProcess\VRCFaceTracking.ModuleProcess.csproj -c Release -p:Platform=x64
    ```
 
-   需要的两个文件 `VRCFaceTracking.Core.dll` 和 `VRCFaceTracking.ModuleProcess.dll` 在 `VRCFaceTracking\VRCFaceTracking.ModuleProcess\bin\x64\Release\net10.0-windows10.0.22621.0\win-x64\` 里。
-
-## 安装到独立副本
-
-1. 关闭 VRCFaceTracking。
-2. 把整个 Steam 安装目录（默认 `C:\Program Files (x86)\Steam\steamapps\common\VRCFaceTracking`）复制到一个新位置，例如 `%LOCALAPPDATA%\Programs\VRCFaceTracking-Patched`。
-3. 用构建出的 `VRCFaceTracking.Core.dll` 和 `VRCFaceTracking.ModuleProcess.dll` 替换副本里的同名文件。
-4. 运行副本里的 `VRCFaceTracking.exe`。
-
-副本和 Steam 版共用 `%APPDATA%\VRCFaceTracking` 里的模块和设置，不需要重新安装模块。两者不要同时运行。想换回官方版，直接从 Steam 启动即可；Steam 更新也不会改动副本。
+   需要的两个文件 `VRCFaceTracking.Core.dll` 和 `VRCFaceTracking.ModuleProcess.dll` 在 `VRCFaceTracking\VRCFaceTracking.ModuleProcess\bin\x64\Release\net10.0-windows10.0.22621.0\win-x64\` 里，这是 Release 构建，用法和压缩包里的文件相同。
 
 ## 设置等待时间
 
