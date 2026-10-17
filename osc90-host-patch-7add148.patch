@@ -1,0 +1,570 @@
+diff --git a/VRCFaceTracking.Core/Library/UnifiedLibManager.cs b/VRCFaceTracking.Core/Library/UnifiedLibManager.cs
+index fbb578c..d478cff 100644
+--- a/VRCFaceTracking.Core/Library/UnifiedLibManager.cs
++++ b/VRCFaceTracking.Core/Library/UnifiedLibManager.cs
+@@ -1,3 +1,4 @@
++// Modified 2026 by osc90-host-patch contributors: configurable request wait; module reply applied under HostDataSync. See https://github.com/WolalaQAQ/osc90-host-patch
+ using System.Collections.ObjectModel;
+ using System.Diagnostics;
+ using System.Reflection;
+@@ -271,15 +272,18 @@ public class UnifiedLibManager : ILibManager
+ 
+                             if ( AvailableSandboxModules[moduleIndex].Status == ModuleState.Active && AvailableSandboxModules[moduleIndex].ModuleInformation.Active )
+                             {
+-                                if ( AvailableSandboxModules[moduleIndex].ModuleInformation.UsingEye )
++                                lock ( UnifiedTracking.HostDataSync )
+                                 {
+-                                    replyUpdatePacket.UpdateGlobalEyeState();
+-                                }
+-                                if ( AvailableSandboxModules[moduleIndex].ModuleInformation.UsingExpression )
+-                                {
+-                                    replyUpdatePacket.UpdateGlobalExpressionState();
++                                    if ( AvailableSandboxModules[moduleIndex].ModuleInformation.UsingEye )
++                                    {
++                                        replyUpdatePacket.UpdateGlobalEyeState();
++                                    }
++                                    if ( AvailableSandboxModules[moduleIndex].ModuleInformation.UsingExpression )
++                                    {
++                                        replyUpdatePacket.UpdateGlobalExpressionState();
++                                    }
++                                    replyUpdatePacket.UpdateHeadState();
+                                 }
+-                                replyUpdatePacket.UpdateHeadState();
+                             }
+ 
+                             break;
+@@ -403,7 +407,7 @@ public class UnifiedLibManager : ILibManager
+             var updatePacket = new EventUpdatePacket();
+             while (!cts.IsCancellationRequested)
+             {
+-                Thread.Sleep(10); // Wait 10ms => 100Hz
++                Thread.Sleep(OscWaitBudgets.PollMs); // Sampling budget; this is not a source-frame clock.
+                 _sandboxServer.SendData(updatePacket, port);
+             }
+             _logger.LogDebug("Thread for {module} ended", module.GetType().Name);
+diff --git a/VRCFaceTracking.Core/MainStandalone.cs b/VRCFaceTracking.Core/MainStandalone.cs
+index d5d9a49..19d83ad 100644
+--- a/VRCFaceTracking.Core/MainStandalone.cs
++++ b/VRCFaceTracking.Core/MainStandalone.cs
+@@ -1,4 +1,5 @@
+-﻿using System.Runtime.CompilerServices;
++﻿// Modified 2026 by osc90-host-patch contributors: timer resolution lease; InternalsVisibleTo for ModuleProcess. See https://github.com/WolalaQAQ/osc90-host-patch
++using System.Runtime.CompilerServices;
+ using Microsoft.Extensions.Logging;
+ using VRCFaceTracking.Core.Contracts.Services;
+ using VRCFaceTracking.Core.Library;
+@@ -7,6 +8,7 @@ using VRCFaceTracking.Core.Params.Data;
+ [assembly: TypeForwardedTo(typeof(VRCFaceTracking.ExtTrackingModule))]
+ [assembly: TypeForwardedTo(typeof(VRCFaceTracking.ModuleMetadata))]
+ [assembly: TypeForwardedTo(typeof(ModuleState))]
++[assembly: InternalsVisibleTo("VRCFaceTracking.ModuleProcess")]
+ 
+ namespace VRCFaceTracking.Core;
+ 
+@@ -32,18 +34,14 @@ public class MainStandalone : IMainService
+     public async Task Teardown()
+     {
+         _logger.LogInformation("VRCFT Standalone Exiting!");
+-        await _mutator.Save();
+-
+-        _libManager.TeardownAllAndResetAsync();
+-
+-        if (OperatingSystem.IsWindows())
++        try
++        {
++            await _mutator.Save();
++            _libManager.TeardownAllAndResetAsync();
++        }
++        finally
+         {
+-            _logger.LogDebug("Resetting our time end period...");
+-            var timeEndRes = Utils.TimeEndPeriod(1);
+-            if (timeEndRes != 0)
+-            {
+-                _logger.LogWarning($"TimeEndPeriod failed with HRESULT {timeEndRes}");
+-            }
++            TimerResolutionLease.Release();
+         }
+ 
+         _logger.LogDebug("Teardown complete. Awaiting exit...");
+@@ -71,10 +69,7 @@ public class MainStandalone : IMainService
+         // Begin main OSC update loop
+         _logger.LogDebug("Starting OSC update loop...");
+ 
+-        if (isWindows)
+-        {
+-            Utils.TimeBeginPeriod(1);
+-        }
++        TimerResolutionLease.Acquire(_logger);
+ 
+         return Task.CompletedTask;
+     }
+diff --git b/VRCFaceTracking.Core/OscWaitBudgets.cs b/VRCFaceTracking.Core/OscWaitBudgets.cs
+new file mode 100644
+index 0000000..4134cf6
+--- /dev/null
++++ b/VRCFaceTracking.Core/OscWaitBudgets.cs
+@@ -0,0 +1,51 @@
++﻿// Copyright 2026 osc90-host-patch contributors. Licensed under the Apache License, Version 2.0.
++using System.Globalization;
++
++namespace VRCFaceTracking.Core;
++
++internal static class OscWaitBudgets
++{
++    private const int DefaultMs = 4;
++
++    internal static readonly int PollMs;
++    internal static readonly int OutputMs;
++
++    static OscWaitBudgets()
++    {
++        PollMs = ReadMilliseconds("--osc-poll-ms", "VRCFT_OSC_POLL_MS");
++        OutputMs = ReadMilliseconds("--osc-output-ms", "VRCFT_OSC_OUTPUT_MS");
++    }
++
++    private static int ReadMilliseconds(string option, string environmentName)
++    {
++        var configured = ReadOption(option);
++        var source = "command-line";
++        if (string.IsNullOrEmpty(configured))
++        {
++            configured = Environment.GetEnvironmentVariable(environmentName, EnvironmentVariableTarget.Process);
++            source = "process-environment";
++        }
++        if (string.IsNullOrEmpty(configured))
++            source = "default";
++
++        var milliseconds = string.IsNullOrEmpty(configured) ? DefaultMs : int.Parse(configured, CultureInfo.InvariantCulture);
++        if (milliseconds < 1)
++            throw new ArgumentOutOfRangeException(option, milliseconds, "OSC wait budget must be positive milliseconds.");
++        Console.WriteLine($"OSC wait budget {option}={milliseconds}ms source={source}");
++        return milliseconds;
++    }
++
++    // Accepts "--name=value" and "--name value"; Steam launch options arrive as ordinary process arguments.
++    private static string? ReadOption(string option)
++    {
++        var args = Environment.GetCommandLineArgs();
++        for (var i = 1; i < args.Length; i++)
++        {
++            if (args[i].StartsWith(option + "=", StringComparison.Ordinal))
++                return args[i][(option.Length + 1)..];
++            if (args[i] == option && i + 1 < args.Length)
++                return args[i + 1];
++        }
++        return null;
++    }
++}
+diff --git a/VRCFaceTracking.Core/Sandboxing/IPC/ReplyUpdatePacket.cs b/VRCFaceTracking.Core/Sandboxing/IPC/ReplyUpdatePacket.cs
+index 24843b0..e8309a4 100644
+--- a/VRCFaceTracking.Core/Sandboxing/IPC/ReplyUpdatePacket.cs
++++ b/VRCFaceTracking.Core/Sandboxing/IPC/ReplyUpdatePacket.cs
+@@ -1,4 +1,5 @@
+-﻿using System;
++﻿// Modified 2026 by osc90-host-patch contributors: completed snapshot publication; expression range starts after BrowOuterUpLeft. See https://github.com/WolalaQAQ/osc90-host-patch
++using System;
+ using System.Collections.Generic;
+ using System.Linq;
+ using System.Runtime.InteropServices;
+@@ -46,11 +47,23 @@ public class ReplyUpdatePacket : IpcPacket
+         Expression_Shapes = new float[EXPRESSION_COUNT]
+     };
+ 
++    // Written only after a completed module Update (or a serialized lifecycle handoff).
++    // Published wire bytes are never mutated or exposed to a sender.
++    private static byte[] _completedSnapshot = Array.Empty<byte>();
++
++    internal static void PublishCompletedSnapshot()
++    {
++        var packet = new ReplyUpdatePacket();
++        Volatile.Write(ref _completedSnapshot, packet.CaptureBytes());
++    }
++
+     public override PacketType GetPacketType() => PacketType.ReplyUpdate;
+ 
+     // We send a challenge to the vrcft host, and if we receive a reply with the same data, we consider the connection successfully ACKed.
+     // In other words, this packet is the handshake begin and ACK packet.
+-    public override byte[] GetBytes()
++    public override byte[] GetBytes() => (byte[])Volatile.Read(ref _completedSnapshot).Clone();
++
++    private byte[] CaptureBytes()
+     {
+         // Build handshake packet
+ 
+@@ -58,7 +71,7 @@ public class ReplyUpdatePacket : IpcPacket
+ 
+         int packetSize = SIZE_PACKET_MAGIC + SIZE_PACKET_TYPE;
+ 
+-        // Update the internal data structure to match the current state of unified tracking
++        // This method runs on the SDK writer after Update returns, never on the send thread.
+         _contiguousUnifiedData.Eye_Left_GazeX               = UnifiedTracking.Data.Eye.Left.Gaze.x;
+         _contiguousUnifiedData.Eye_Left_GazeY               = UnifiedTracking.Data.Eye.Left.Gaze.y;
+         _contiguousUnifiedData.Eye_Left_PupilDiameter_MM    = UnifiedTracking.Data.Eye.Left.PupilDiameter_MM;
+@@ -196,7 +209,7 @@ public class ReplyUpdatePacket : IpcPacket
+     public void UpdateGlobalExpressionState()
+     {
+         // Copy face tracking
+-        for ( int i = (int)UnifiedExpressions.BrowOuterUpLeft; i < _contiguousUnifiedData.Expression_Shapes.Length; i++ )
++        for ( int i = (int)UnifiedExpressions.BrowOuterUpLeft + 1; i < _contiguousUnifiedData.Expression_Shapes.Length; i++ )
+         {
+             if ( _contiguousUnifiedData.Expression_Shapes[i] != INVALID_FLOAT)
+                 UnifiedTracking.Data.Shapes[i].Weight = _contiguousUnifiedData.Expression_Shapes[i];
+diff --git a/VRCFaceTracking.Core/Services/ParameterSenderService.cs b/VRCFaceTracking.Core/Services/ParameterSenderService.cs
+index 0dbc533..62a5bd5 100644
+--- a/VRCFaceTracking.Core/Services/ParameterSenderService.cs
++++ b/VRCFaceTracking.Core/Services/ParameterSenderService.cs
+@@ -1,4 +1,5 @@
+-﻿using Microsoft.Extensions.Hosting;
++﻿// Modified 2026 by osc90-host-patch contributors: configurable output wait. See https://github.com/WolalaQAQ/osc90-host-patch
++using Microsoft.Extensions.Hosting;
+ using VRCFaceTracking.Core.Contracts;
+ using VRCFaceTracking.Core.OSC;
+ using VRCFaceTracking.Core.Params.Data;
+@@ -48,7 +49,7 @@ public class ParameterSenderService : BackgroundService
+         {
+             try
+             {
+-                await Task.Delay(10, cancellationToken);
++                await Task.Delay(OscWaitBudgets.OutputMs, cancellationToken);
+ 
+                 await UnifiedTracking.UpdateData(cancellationToken);
+ 
+diff --git b/VRCFaceTracking.Core/TimerResolutionLease.cs b/VRCFaceTracking.Core/TimerResolutionLease.cs
+new file mode 100644
+index 0000000..ad357f4
+--- /dev/null
++++ b/VRCFaceTracking.Core/TimerResolutionLease.cs
+@@ -0,0 +1,117 @@
++﻿// Copyright 2026 osc90-host-patch contributors. Licensed under the Apache License, Version 2.0.
++using System.Runtime.InteropServices;
++using Microsoft.Extensions.Logging;
++
++namespace VRCFaceTracking.Core;
++
++// One process-local owner. Other power-throttling bits are never owned by this lease.
++internal static class TimerResolutionLease
++{
++    private const int ProcessPowerThrottling = 4;
++    private const uint IgnoreTimerResolution = 4;
++    private static readonly object Sync = new();
++    private static PowerThrottlingState _original;
++    private static bool _started, _policyOwned, _periodOwned;
++    private static ILogger? _logger;
++
++    [StructLayout(LayoutKind.Sequential)]
++    private struct PowerThrottlingState
++    {
++        public uint Version, ControlMask, StateMask;
++    }
++
++    [DllImport("kernel32.dll", SetLastError = true)]
++    [return: MarshalAs(UnmanagedType.Bool)]
++    private static extern bool GetProcessInformation(nint process, int kind,
++        ref PowerThrottlingState information, uint size);
++
++    [DllImport("kernel32.dll", SetLastError = true)]
++    [return: MarshalAs(UnmanagedType.Bool)]
++    private static extern bool SetProcessInformation(nint process, int kind,
++        ref PowerThrottlingState information, uint size);
++
++    internal static void Acquire(ILogger logger)
++    {
++        if (!OperatingSystem.IsWindows()) return;
++        lock (Sync)
++        {
++            if (_started) return;
++            _started = true;
++            _logger = logger;
++            AppDomain.CurrentDomain.ProcessExit += (_, _) => Release();
++
++            _original = new() { Version = 1 };
++            uint size = (uint)Marshal.SizeOf<PowerThrottlingState>();
++            bool gotOriginal = GetProcessInformation(-1, ProcessPowerThrottling, ref _original, size);
++            int getError = gotOriginal ? 0 : Marshal.GetLastPInvokeError();
++            int setError = 0;
++            if (gotOriginal)
++            {
++                var desired = _original;
++                desired.ControlMask |= IgnoreTimerResolution;
++                desired.StateMask &= ~IgnoreTimerResolution;
++                _policyOwned = SetProcessInformation(-1, ProcessPowerThrottling, ref desired, size);
++                setError = _policyOwned ? 0 : Marshal.GetLastPInvokeError();
++            }
++
++            var observed = new PowerThrottlingState { Version = 1 };
++            bool gotObserved = GetProcessInformation(-1, ProcessPowerThrottling, ref observed, size);
++            int observedError = gotObserved ? 0 : Marshal.GetLastPInvokeError();
++            uint beginResult = Utils.TimeBeginPeriod(1);
++            _periodOwned = beginResult == 0;
++
++            logger.LogInformation(
++                $"Timer resolution lease acquire pid={Environment.ProcessId}: GetProcessInformation={gotOriginal} error={getError} before={_original.ControlMask}/{_original.StateMask}; " +
++                $"SetProcessInformation called={gotOriginal} result={_policyOwned} error={setError}; " +
++                $"GetProcessInformation verify={gotObserved} error={observedError} observed={observed.ControlMask}/{observed.StateMask}; " +
++                $"TimeBeginPeriod(1) result={beginResult}.");
++        }
++    }
++
++    internal static void Release()
++    {
++        lock (Sync)
++        {
++            if (!_policyOwned && !_periodOwned) return;
++            bool restoreRequested = _policyOwned;
++            bool gotCurrent = false, restored = false;
++            int getError = 0, setError = 0;
++            var current = new PowerThrottlingState { Version = 1 };
++            var desired = current;
++            uint size = (uint)Marshal.SizeOf<PowerThrottlingState>();
++            if (restoreRequested)
++            {
++                gotCurrent = GetProcessInformation(-1, ProcessPowerThrottling, ref current, size);
++                getError = gotCurrent ? 0 : Marshal.GetLastPInvokeError();
++                if (gotCurrent)
++                {
++                    desired = current;
++                    desired.ControlMask = (current.ControlMask & ~IgnoreTimerResolution) |
++                        (_original.ControlMask & IgnoreTimerResolution);
++                    desired.StateMask = (current.StateMask & ~IgnoreTimerResolution) |
++                        (_original.StateMask & IgnoreTimerResolution);
++                    restored = SetProcessInformation(-1, ProcessPowerThrottling, ref desired, size);
++                    setError = restored ? 0 : Marshal.GetLastPInvokeError();
++                    if (restored) _policyOwned = false;
++                }
++            }
++
++            var observed = new PowerThrottlingState { Version = 1 };
++            bool gotObserved = GetProcessInformation(-1, ProcessPowerThrottling, ref observed, size);
++            int observedError = gotObserved ? 0 : Marshal.GetLastPInvokeError();
++            bool endRequested = _periodOwned;
++            uint endResult = 0;
++            if (endRequested)
++            {
++                endResult = Utils.TimeEndPeriod(1);
++                if (endResult == 0) _periodOwned = false;
++            }
++
++            _logger?.LogInformation(
++                $"Timer resolution lease release pid={Environment.ProcessId}: restoreRequested={restoreRequested} GetProcessInformation={gotCurrent} error={getError} current={current.ControlMask}/{current.StateMask}; " +
++                $"SetProcessInformation called={restoreRequested && gotCurrent} result={restored} error={setError} desired={desired.ControlMask}/{desired.StateMask}; " +
++                $"GetProcessInformation verify={gotObserved} error={observedError} observed={observed.ControlMask}/{observed.StateMask}; " +
++                $"TimeEndPeriod(1) called={endRequested} result={endResult}; policyRestorePending={_policyOwned} periodEndPending={_periodOwned}.");
++        }
++    }
++}
+diff --git a/VRCFaceTracking.Core/UnifiedTracking.cs b/VRCFaceTracking.Core/UnifiedTracking.cs
+index 4ed409d..46b2074 100644
+--- a/VRCFaceTracking.Core/UnifiedTracking.cs
++++ b/VRCFaceTracking.Core/UnifiedTracking.cs
+@@ -1,4 +1,5 @@
+-﻿using VRCFaceTracking.Core.Params;
++﻿// Modified 2026 by osc90-host-patch contributors: HostDataSync lock around parameter evaluation. See https://github.com/WolalaQAQ/osc90-host-patch
++using VRCFaceTracking.Core.Params;
+ using VRCFaceTracking.Core.Params.Data;
+ using VRCFaceTracking.Core.Params.Expressions;
+ using VRCFaceTracking.Core.Params.Expressions.Legacy.Eye;
+@@ -27,6 +28,9 @@ namespace VRCFaceTracking
+         /// </summary>
+         public static UnifiedTrackingData Data = new();
+ 
++        // Host IPC application and complete parameter evaluation share this transaction boundary.
++        internal static readonly object HostDataSync = new();
++
+         /// <summary>
+         /// Container of all features and functions that mutates the incoming expression data into output data suitable for driving Unified Expressions.
+         /// </summary>
+@@ -64,6 +68,15 @@ namespace VRCFaceTracking
+         /// <summary>
+         /// Central update function that updates all output parameter data and pushes the latest expressions from VRCFaceTracking modules into the internal expressions buffer.
+         /// </summary>
+-        public static async Task UpdateData(CancellationToken ct) => OnUnifiedDataUpdated.Invoke(await Task.Run(() => Mutator.MutateData(Data), ct));
++        public static async Task UpdateData(CancellationToken ct)
++        {
++            await Task.Run(() =>
++            {
++                lock (HostDataSync)
++                {
++                    OnUnifiedDataUpdated.Invoke(Mutator.MutateData(Data));
++                }
++            }, ct);
++        }
+     }
+ }
+\ No newline at end of file
+diff --git a/VRCFaceTracking.ModuleProcess/ModuleProcessMain.cs b/VRCFaceTracking.ModuleProcess/ModuleProcessMain.cs
+index 4bce1ef..2599119 100644
+--- a/VRCFaceTracking.ModuleProcess/ModuleProcessMain.cs
++++ b/VRCFaceTracking.ModuleProcess/ModuleProcessMain.cs
+@@ -1,8 +1,11 @@
+-﻿using System.CommandLine;
++﻿// Modified 2026 by osc90-host-patch contributors: timer resolution lease; ConcurrentQueue; serialized teardown; snapshot publication. See https://github.com/WolalaQAQ/osc90-host-patch
++using System.CommandLine;
++using System.Collections.Concurrent;
+ using System.Diagnostics;
+ using System.Runtime.InteropServices;
+ using Microsoft.Extensions.DependencyInjection;
+ using Microsoft.Extensions.Logging;
++using VRCFaceTracking.Core;
+ using VRCFaceTracking.Core.Params.Data;
+ using VRCFaceTracking.Core.Params.Expressions;
+ using VRCFaceTracking.Core.Sandboxing;
+@@ -21,8 +24,25 @@ public class ModuleProcessMain
+     public static VrcftSandboxClient Client;
+     public static CancellationTokenSource cts = new();
+ 
+-    private static Queue<IpcPacket> _packetsToSend = new ();
++    private static readonly ConcurrentQueue<IpcPacket> _packetsToSend = new ();
+     private static Timer? _connectionTimer;
++    private static Thread? _moduleUpdateThread;
++    private static readonly object _teardownSync = new();
++    private static bool _moduleTornDown;
++
++    private static void TeardownModule()
++    {
++        lock (_teardownSync)
++        {
++            if (_moduleTornDown) return;
++            DefModuleAssembly._updateCts?.Cancel();
++            if (_moduleUpdateThread is { IsAlive: true } && !_moduleUpdateThread.Join(1000))
++                throw new TimeoutException("Module Update did not stop; skipped concurrent Teardown and snapshot publication.");
++            DefModuleAssembly.TrackingModule.Teardown();
++            ReplyUpdatePacket.PublishCompletedSnapshot();
++            _moduleTornDown = true;
++        }
++    }
+ 
+     private static object _callbackLock = new ();
+     private static bool _shouldCallReceive = false;
+@@ -38,6 +58,7 @@ public class ModuleProcessMain
+     {
+         AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
+         {
++            TimerResolutionLease.Release();
+             Logger.LogInformation("Received SIGTERM");
+             WaitForPackets = false;
+             DefModuleAssembly._updateCts.Cancel();
+@@ -95,6 +116,7 @@ public class ModuleProcessMain
+         }
+         finally
+         {
++            TimerResolutionLease.Release();
+             Client?.Dispose();
+         }
+     }
+@@ -136,8 +158,7 @@ public class ModuleProcessMain
+                 {
+                     try
+                     {
+-                        DefModuleAssembly?._updateCts?.Cancel();
+-                        DefModuleAssembly?.TrackingModule?.Teardown();
++                        TeardownModule();
+                     }
+                     catch (Exception) { }
+                 });
+@@ -145,6 +166,7 @@ public class ModuleProcessMain
+                 teardownThread.Start();
+                 teardownThread.Join(TimeSpan.FromSeconds(10));
+ 
++                TimerResolutionLease.Release();
+                 Process.GetCurrentProcess().Kill();
+             });
+             watchdogThread.IsBackground = true;
+@@ -166,6 +188,8 @@ public class ModuleProcessMain
+             Client.SendData(pkt);
+         };
+ 
++        TimerResolutionLease.Acquire(Logger);
++
+         // Try loading the module
+         DefModuleAssembly = new ModuleAssembly(Logger, LoggerFactory, modulePath);
+         DefModuleAssembly.TryLoadAssembly();
+@@ -194,6 +218,7 @@ public class ModuleProcessMain
+         {
+             UnifiedTracking.Data.Shapes[i].Weight = 0xFFFFFFFF;
+         }
++        ReplyUpdatePacket.PublishCompletedSnapshot();
+ 
+         Client.OnReceiveShouldBeQueued += QueueReceiveEvent;
+         Client.OnPacketReceivedCallback += (in IpcPacket packet) => {
+@@ -222,6 +247,7 @@ public class ModuleProcessMain
+                         try
+                         {
+                             (eyeSuccess, expressionSuccess) = DefModuleAssembly.TrackingModule.Initialize(pkt.eyeAvailable, pkt.expressionAvailable);
++                            ReplyUpdatePacket.PublishCompletedSnapshot();
+                         }
+                         catch ( MissingMethodException )
+                         {
+@@ -234,16 +260,18 @@ public class ModuleProcessMain
+                         }
+                         
+                         DefModuleAssembly._updateCts = new CancellationTokenSource();
+-                        var thread = new Thread(() =>
++                        _moduleTornDown = false;
++                        _moduleUpdateThread = new Thread(() =>
+                         {
+                             while (!DefModuleAssembly._updateCts.IsCancellationRequested)
+                             {
+                                 DefModuleAssembly.TrackingModule.Update();
++                                ReplyUpdatePacket.PublishCompletedSnapshot();
+                             }
+                         });
+                         // Background thread as to not prevent the CLR from terminating if stuck in native code (looking at you vive)
+-                        thread.IsBackground = true;
+-                        thread.Start();
++                        _moduleUpdateThread.IsBackground = true;
++                        _moduleUpdateThread.Start();
+                         
+                         var pktNew = new ReplyInitPacket()
+                         {
+@@ -262,13 +290,17 @@ public class ModuleProcessMain
+                         DefModuleAssembly._updateCts?.Cancel();
+                         try
+                         {
+-                            DefModuleAssembly.TrackingModule.Teardown();
++                            TeardownModule();
+                         }
+                         catch(Exception e)
+                         {
+                             Logger.LogWarning("Tracking module failed to cleanly shut down.");
+                             Logger.LogError(e.ToString());
+                         }
++                        finally
++                        {
++                            TimerResolutionLease.Release();
++                        }
+ 
+                         Logger.LogInformation("Cancelled Update Threads");
+                         
+@@ -302,11 +334,6 @@ public class ModuleProcessMain
+             }
+ 
+         };
+-        if (OperatingSystem.IsWindows())
+-        {
+-            Core.Utils.TimeBeginPeriod(1);
+-        }
+-        
+         // Start the connection
+         Client.Connect(modulePath);
+         Logger.LogInformation("Initializing {module}", DefModuleAssembly.Assembly.ToString());
+@@ -323,7 +350,6 @@ public class ModuleProcessMain
+             // Send packets in loop
+             while (_packetsToSend.TryDequeue(out IpcPacket pkt))
+             {
+-                if (pkt == null) continue;  // Ignore your IDE. This can and will be null at some point as we're not locking
+                 Client.SendData(pkt);
+             }
+ 
+@@ -339,10 +365,7 @@ public class ModuleProcessMain
+         DefModuleAssembly._updateCts.Cancel();
+         _connectionTimer?.Dispose();
+ 
+-        if (OperatingSystem.IsWindows())
+-        {
+-            Core.Utils.TimeEndPeriod(1);
+-        }
++        TimerResolutionLease.Release();
+ 
+         Environment.Exit(ModuleProcessExitCodes.OK);
+         return ModuleProcessExitCodes.OK;
