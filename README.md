@@ -45,7 +45,7 @@ The patch modifies 6 official files and adds two new files, `OscWaitBudgets.cs` 
 
 ## Building
 
-You need Windows, [Git](https://git-scm.com/) and the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
+You need Windows, [Git](https://git-scm.com/) and the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). GitHub Actions runs the same steps on every push, applying the patch to `7add148` and building both projects; pushing a `v*` tag publishes a release built from these changelog sections.
 
 1. Get the official source and check out the matching commit:
 

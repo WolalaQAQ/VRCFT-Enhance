@@ -1,0 +1,125 @@
+name: Verify patch and publish release
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to verify and publish (e.g. v1.0.1); blank = verify only'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: patch-${{ inputs.tag || github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name || '') }}
+  UPSTREAM_REPOSITORY: https://github.com/benaclejames/VRCFaceTracking.git
+  UPSTREAM_COMMIT: 7add14873e398c4095d06913cdeee7a01fc43fab
+  PATCH_FILE: VRCFT-Enhance-7add148.patch
+
+jobs:
+  verify:
+    name: Apply the patch to VRCFaceTracking and build
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Fetch the pinned upstream commit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git init upstream
+          git -C upstream remote add origin $env:UPSTREAM_REPOSITORY
+          git -C upstream -c protocol.version=2 fetch --depth 1 origin $env:UPSTREAM_COMMIT
+          git -C upstream checkout --detach FETCH_HEAD
+          git -C upstream rev-parse HEAD
+
+      - name: Apply the patch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $patch = Join-Path $env:GITHUB_WORKSPACE $env:PATCH_FILE
+          git -C upstream apply --check --ignore-whitespace $patch
+          git -C upstream apply --ignore-whitespace $patch
+          git -C upstream status --short
+
+      - name: Build Core and ModuleProcess
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet build upstream\VRCFaceTracking.ModuleProcess\VRCFaceTracking.ModuleProcess.csproj `
+            -c Release -p:Platform=x64
+          $output = 'upstream\VRCFaceTracking.ModuleProcess\bin\x64\Release\net10.0-windows10.0.22621.0\win-x64'
+          foreach ($name in 'VRCFaceTracking.Core.dll', 'VRCFaceTracking.ModuleProcess.dll') {
+            $path = Join-Path $output $name
+            if (-not (Test-Path $path)) { throw "Missing build output: $name" }
+            Write-Host "$name $((Get-Item $path).Length) bytes"
+          }
+
+  release:
+    name: Publish GitHub Release
+    needs: verify
+    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - name: Create the release from the changelog, or refresh its assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          # Body of the "## [version]" section, up to the next version heading.
+          section() { awk -v h="## [$version]" 'index($0, h) == 1 { on = 1; next } on && /^## \[/ { exit } on' "$1"; }
+          {
+            echo "## What's new"
+            section CHANGELOG.md
+            echo
+            echo "## 更新内容"
+            section CHANGELOG_zh.md
+          } > release-notes.md
+          for file in CHANGELOG.md CHANGELOG_zh.md; do
+            if [[ -z "$(section "$file")" ]]; then
+              echo "::error::$file has no [$version] section"
+              exit 1
+            fi
+          done
+
+          assets=("$PATCH_FILE" LICENSE)
+          if gh release view "$RELEASE_TAG" --json tagName > /dev/null 2>&1; then
+            # Rerun for an existing release: replace the assets, keep its notes.
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            options=()
+            if [[ "$RELEASE_TAG" == *-* ]]; then
+              options+=(--prerelease)
+            fi
+            # Publish only after the assets are attached.
+            gh release create "$RELEASE_TAG" "${assets[@]}" --verify-tag --draft \
+              --title "VRCFT-Enhance $RELEASE_TAG" --notes-file release-notes.md "${options[@]}"
+            gh release edit "$RELEASE_TAG" --draft=false
+          fi

@@ -45,7 +45,7 @@
 
 ## 构建
 
-需要 Windows、[Git](https://git-scm.com/) 和 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)。
+需要 Windows、[Git](https://git-scm.com/) 和 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)。每次推送都会由 GitHub Actions 执行同样的步骤：把补丁应用到 `7add148` 并构建两个项目；推送 `v*` tag 时，会用更新日志中对应版本的内容发布 Release。
 
 1. 获取官方源码并切换到对应提交：
 
