@@ -1,73 +1,73 @@
-VRCFT-Enhance 1.0.1
-Patched VRCFaceTracking 5.4.5 host DLLs
+VRCFT-Enhance @VERSION@
+Target host: VRCFaceTracking @HOST_VERSION@
+Upstream commit: @UPSTREAM_COMMIT@
 
-What this is
-------------
-VRCFaceTracking.Core.dll and VRCFaceTracking.ModuleProcess.dll, built from
-VRCFaceTracking commit 7add148 with the patch in this repository.
+This package contains a matched VRCFaceTracking.Core.dll and
+VRCFaceTracking.ModuleProcess.dll. Check provenance.json and the target
+above before installing. Do not use the 5.4.5 package with VRCFT 6 or mix
+Core and ModuleProcess from different packages.
 
-Install
--------
+Installation
 1. Close VRCFaceTracking.
-2. Copy your Steam VRCFaceTracking folder (usually
-   C:\Program Files (x86)\Steam\steamapps\common\VRCFaceTracking) to a new
-   location, for example %LOCALAPPDATA%\Programs\VRCFaceTracking-Patched.
-3. Replace VRCFaceTracking.Core.dll and VRCFaceTracking.ModuleProcess.dll in
-   that copy with the files next to this one.
-4. Start VRCFaceTracking.exe from the copy.
+2. Copy the entire matching, unmodified VRCFaceTracking installation to a
+   separate directory. Keep the original Steam installation unchanged.
+3. Replace the two DLLs in the COPY with this package's two DLLs.
+4. Run VRCFaceTracking.exe from the copy.
 
-The copy shares modules and settings with the Steam version through
-%APPDATA%\VRCFaceTracking. Do not run both at the same time. To go back to the
-official version, start it from Steam; Steam updates do not touch the copy.
+The copy shares %APPDATA%\VRCFaceTracking modules and settings with the
+official host. Do not run both at the same time. Return to the original
+host by launching it from Steam. After a Steam update, make a fresh copy
+and use a patch explicitly targeting that update; do not copy a previous
+patched directory over the updated installation.
 
-Options
--------
-The two waits are 4 ms by default. To change them, append to a shortcut's
-Target, for example:
+Options (positive integer milliseconds; read once at startup)
+  --osc-poll-ms=4       VRCFT_OSC_POLL_MS
+  --osc-output-ms=4     VRCFT_OSC_OUTPUT_MS
+Command-line options override process environment variables.
 
-  --osc-poll-ms=4 --osc-output-ms=4
+Defaults are 4 ms. Poll controls module snapshot requests. In VRCFT 5,
+output controls the periodic sender wait. In VRCFT 6, sending remains
+reply-driven and output controls the maximum wait for other modules to
+reply. It is NOT a fixed OSC output interval in VRCFT 6.
 
-Environment variables VRCFT_OSC_POLL_MS and VRCFT_OSC_OUTPUT_MS work too;
-command-line options take precedence. Values are read at startup.
-
-These DLLs are for VRCFaceTracking 5.4.5 only. Another version is untested and
-may fail to start.
+Native face blobs require VRCFT 6 and a compatible Avatar. The patch does
+not add native output to VRCFT 5. The left outer brow belongs to the eye
+module; an expression-only setup without an eye module loses that brow.
 
 License: Apache License 2.0, see LICENSE. VRCFaceTracking is copyright
-benaclejames; these files are modified copies.
+benaclejames; these DLLs are modified copies.
 
 ------------------------------------------------------------
 
-VRCFT-Enhance 1.0.1
-打好补丁的 VRCFaceTracking 5.4.5 宿主 DLL
+VRCFT-Enhance @VERSION@
+适用宿主：VRCFaceTracking @HOST_VERSION@
+上游提交：@UPSTREAM_COMMIT@
 
-这是什么
---------
-VRCFaceTracking.Core.dll 和 VRCFaceTracking.ModuleProcess.dll，由 VRCFaceTracking
-提交 7add148 加上本仓库的补丁构建而成。
+包内两个 DLL 必须配套使用。先核对上方目标版本和 provenance.json；
+不要把 5.4.5 补丁装进 VRCFT 6，也不要混用不同补丁的 Core 与 ModuleProcess。
 
 安装
-----
 1. 关闭 VRCFaceTracking。
-2. 把 Steam 的 VRCFaceTracking 目录（通常为
-   C:\Program Files (x86)\Steam\steamapps\common\VRCFaceTracking）整个复制到新位置，
-   例如 %LOCALAPPDATA%\Programs\VRCFaceTracking-Patched。
-3. 用本文件旁边的两个 DLL 替换该副本里的同名文件。
-4. 运行副本里的 VRCFaceTracking.exe。
+2. 把完整、未修改且版本匹配的 VRCFaceTracking 安装目录复制到新目录，
+   Steam 正式安装保持原样。
+3. 用包内两个 DLL 替换副本中的同名文件。
+4. 从副本运行 VRCFaceTracking.exe。
 
-副本与 Steam 版共用 %APPDATA%\VRCFaceTracking 里的模块和设置。两者不要同时运行。
-想换回官方版，直接从 Steam 启动即可；Steam 更新不会改动副本。
+副本与官方宿主共用 %APPDATA%\VRCFaceTracking 的模块和设置，不要同时运行。
+从 Steam 启动即可回到原版。Steam 升级后应重新复制正式目录，并使用明确匹配
+该版本的补丁；不要把旧补丁目录直接覆盖到新版安装上。
 
-选项
-----
-两处等待默认为 4 ms。要修改时，在快捷方式的“目标”末尾追加，例如：
+设置（正整数毫秒，只在启动时读取）
+  --osc-poll-ms=4       VRCFT_OSC_POLL_MS
+  --osc-output-ms=4     VRCFT_OSC_OUTPUT_MS
+命令行优先于进程环境变量。默认均为 4 ms。
 
-  --osc-poll-ms=4 --osc-output-ms=4
+poll 控制模块快照请求间隔。VRCFT 5 的 output 控制定时发送等待；
+VRCFT 6 保留收到回复触发发送，output 只控制等待其他模块回复的最长合并窗口，
+不是固定的 OSC 发送周期。
 
-也可以使用环境变量 VRCFT_OSC_POLL_MS 和 VRCFT_OSC_OUTPUT_MS；命令行参数优先。
-数值只在启动时读取。
+原生整脸 blob 需要 VRCFT 6 与兼容 Avatar；补丁不会给 VRCFT 5 增加原生输出。
+左外眉归眼部模块；只用表情模块、不用眼部模块时，该眉不再由表情模块更新。
 
-这两个 DLL 只适用于 VRCFaceTracking 5.4.5。其他版本没有测试过，可能无法启动。
-
-许可证：Apache License 2.0，见 LICENSE。VRCFaceTracking 版权归 benaclejames 所有；
-这些文件是修改后的副本。
+许可证：Apache License 2.0，见 LICENSE。VRCFaceTracking 版权归 benaclejames；
+这些 DLL 是修改后的副本。

@@ -1,0 +1,555 @@
+diff --git a/VRCFaceTracking.Core/Library/UnifiedLibManager.Sandbox.cs b/VRCFaceTracking.Core/Library/UnifiedLibManager.Sandbox.cs
+index a1e9ed7..3d3740d 100644
+--- a/VRCFaceTracking.Core/Library/UnifiedLibManager.Sandbox.cs
++++ b/VRCFaceTracking.Core/Library/UnifiedLibManager.Sandbox.cs
+@@ -1,3 +1,4 @@
++// Modified 2026 by VRCFT-Enhance contributors: configurable polling and synchronized IPC application. See https://github.com/WolalaQAQ/VRCFT-Enhance
+ using System.Diagnostics;
+ using System.Runtime.InteropServices;
+ using Microsoft.Extensions.Logging;
+@@ -212,15 +213,18 @@ public partial class UnifiedLibManager
+             return;
+         }
+ 
+-        if (module.ModuleInformation.UsingEye)
++        lock (UnifiedTracking.HostDataSync)
+         {
+-            reply.UpdateGlobalEyeState();
+-        }
+-        if (module.ModuleInformation.UsingExpression)
+-        {
+-            reply.UpdateGlobalExpressionState();
++            if (module.ModuleInformation.UsingEye)
++            {
++                reply.UpdateGlobalEyeState();
++            }
++            if (module.ModuleInformation.UsingExpression)
++            {
++                reply.UpdateGlobalExpressionState();
++            }
++            reply.UpdateHeadState();
+         }
+-        reply.UpdateHeadState();
+ 
+         _sendCoordinator.NotifyReply(module.SandboxProcessPort);
+     }
+@@ -295,7 +299,7 @@ public partial class UnifiedLibManager
+             var updatePacket = new EventUpdatePacket();
+             while (!cts.IsCancellationRequested)
+             {
+-                Thread.Sleep(10); // 100Hz
++                Thread.Sleep(OscWaitBudgets.PollMs); // Latest-state sampling, not a source-frame clock.
+                 _sandboxServer.SendData(updatePacket, port);
+             }
+             _logger.LogDebug("Thread for {module} ended", module.GetType().Name);
+diff --git a/VRCFaceTracking.Core/MainStandalone.cs b/VRCFaceTracking.Core/MainStandalone.cs
+index 983ba63..cb7cfb0 100644
+--- a/VRCFaceTracking.Core/MainStandalone.cs
++++ b/VRCFaceTracking.Core/MainStandalone.cs
+@@ -1,4 +1,5 @@
+-﻿using System.Runtime.CompilerServices;
++﻿// Modified 2026 by VRCFT-Enhance contributors: process-local timer lease and snapshot publication access. See https://github.com/WolalaQAQ/VRCFT-Enhance
++using System.Runtime.CompilerServices;
+ using Microsoft.Extensions.Logging;
+ using VRCFaceTracking.Core.Contracts.Services;
+ using VRCFaceTracking.Core.Library;
+@@ -7,6 +8,7 @@ using VRCFaceTracking.Core.Params.Data;
+ [assembly: TypeForwardedTo(typeof(VRCFaceTracking.ExtTrackingModule))]
+ [assembly: TypeForwardedTo(typeof(VRCFaceTracking.ModuleMetadata))]
+ [assembly: TypeForwardedTo(typeof(ModuleState))]
++[assembly: InternalsVisibleTo("VRCFaceTracking.ModuleProcess")]
+ 
+ namespace VRCFaceTracking.Core;
+ 
+@@ -32,18 +34,14 @@ public class MainStandalone : IMainService
+     public async Task Teardown()
+     {
+         _logger.LogInformation("VRCFT Standalone Exiting!");
+-        await _mutator.Save();
+-
+-        await _libManager.TeardownAllModules();
+-
+-        if (OperatingSystem.IsWindows())
++        try
++        {
++            await _mutator.Save();
++            await _libManager.TeardownAllModules();
++        }
++        finally
+         {
+-            _logger.LogDebug("Resetting our time end period...");
+-            var timeEndRes = Utils.TimeEndPeriod(1);
+-            if (timeEndRes != 0)
+-            {
+-                _logger.LogWarning($"TimeEndPeriod failed with HRESULT {timeEndRes}");
+-            }
++            TimerResolutionLease.Release();
+         }
+ 
+         _logger.LogDebug("Teardown complete. Awaiting exit...");
+@@ -68,10 +66,7 @@ public class MainStandalone : IMainService
+ 
+         _mutator.Load();
+ 
+-        if (isWindows)
+-        {
+-            Utils.TimeBeginPeriod(1);
+-        }
++        TimerResolutionLease.Acquire(_logger);
+ 
+         return Task.CompletedTask;
+     }
+diff --git a/VRCFaceTracking.Core/OscWaitBudgets.cs b/VRCFaceTracking.Core/OscWaitBudgets.cs
+new file mode 100644
+index 0000000..81c255c
+--- /dev/null
++++ b/VRCFaceTracking.Core/OscWaitBudgets.cs
+@@ -0,0 +1,39 @@
++// Copyright 2026 VRCFT-Enhance contributors. Licensed under the Apache License, Version 2.0.
++using System.Globalization;
++
++namespace VRCFaceTracking.Core;
++
++internal static class OscWaitBudgets
++{
++    private const int DefaultMs = 4;
++    internal static readonly int PollMs = ReadMilliseconds("--osc-poll-ms", "VRCFT_OSC_POLL_MS");
++    internal static readonly int OutputMs = ReadMilliseconds("--osc-output-ms", "VRCFT_OSC_OUTPUT_MS");
++
++    private static int ReadMilliseconds(string option, string environmentName)
++    {
++        var configured = ReadOption(option);
++        var source = "command-line";
++        if (string.IsNullOrEmpty(configured))
++        {
++            configured = Environment.GetEnvironmentVariable(environmentName, EnvironmentVariableTarget.Process);
++            source = "process-environment";
++        }
++        if (string.IsNullOrEmpty(configured)) source = "default";
++        var milliseconds = string.IsNullOrEmpty(configured) ? DefaultMs : int.Parse(configured, CultureInfo.InvariantCulture);
++        if (milliseconds < 1)
++            throw new ArgumentOutOfRangeException(option, milliseconds, "OSC wait budget must be positive milliseconds.");
++        Console.WriteLine($"OSC wait budget {option}={milliseconds}ms source={source}");
++        return milliseconds;
++    }
++
++    private static string? ReadOption(string option)
++    {
++        var args = Environment.GetCommandLineArgs();
++        for (var i = 1; i < args.Length; i++)
++        {
++            if (args[i].StartsWith(option + "=", StringComparison.Ordinal)) return args[i][(option.Length + 1)..];
++            if (args[i] == option && i + 1 < args.Length) return args[i + 1];
++        }
++        return null;
++    }
++}
+diff --git a/VRCFaceTracking.Core/Sandboxing/IPC/ReplyUpdatePacket.cs b/VRCFaceTracking.Core/Sandboxing/IPC/ReplyUpdatePacket.cs
+index 0a4a678..814c898 100644
+--- a/VRCFaceTracking.Core/Sandboxing/IPC/ReplyUpdatePacket.cs
++++ b/VRCFaceTracking.Core/Sandboxing/IPC/ReplyUpdatePacket.cs
+@@ -1,4 +1,5 @@
+-﻿using System;
++﻿// Modified 2026 by VRCFT-Enhance contributors: completed snapshots and non-overlapping eye/expression ownership. See https://github.com/WolalaQAQ/VRCFT-Enhance
++using System;
+ using System.Collections.Generic;
+ using System.Linq;
+ using System.Runtime.InteropServices;
+@@ -46,11 +47,23 @@ public class ReplyUpdatePacket : IpcPacket
+         Expression_Shapes = new float[EXPRESSION_COUNT]
+     };
+ 
++    // Only the SDK writer (or serialized lifecycle handoff) captures mutable tracking data.
++    // Published wire bytes are immutable and senders receive private clones.
++    private static byte[] _completedSnapshot = Array.Empty<byte>();
++
++    internal static void PublishCompletedSnapshot()
++    {
++        var packet = new ReplyUpdatePacket();
++        Volatile.Write(ref _completedSnapshot, packet.CaptureBytes());
++    }
++
+     public override PacketType GetPacketType() => PacketType.ReplyUpdate;
+ 
+     // We send a challenge to the vrcft host, and if we receive a reply with the same data, we consider the connection successfully ACKed.
+     // In other words, this packet is the handshake begin and ACK packet.
+-    public override byte[] GetBytes()
++    public override byte[] GetBytes() => (byte[])Volatile.Read(ref _completedSnapshot).Clone();
++
++    private byte[] CaptureBytes()
+     {
+         // Build handshake packet
+ 
+@@ -58,7 +71,7 @@ public class ReplyUpdatePacket : IpcPacket
+ 
+         int packetSize = SIZE_PACKET_MAGIC + SIZE_PACKET_TYPE;
+ 
+-        // Update the internal data structure to match the current state of unified tracking
++        // Capture on the SDK writer only, after Update returns.
+         _contiguousUnifiedData.Eye_Left_GazeX               = UnifiedTracking.Data.Eye.Left.Gaze.x;
+         _contiguousUnifiedData.Eye_Left_GazeY               = UnifiedTracking.Data.Eye.Left.Gaze.y;
+         _contiguousUnifiedData.Eye_Left_PupilDiameter_MM    = UnifiedTracking.Data.Eye.Left.PupilDiameter_MM;
+@@ -196,7 +209,7 @@ public class ReplyUpdatePacket : IpcPacket
+     public void UpdateGlobalExpressionState()
+     {
+         // Copy face tracking
+-        for ( int i = (int)UnifiedExpressions.BrowOuterUpLeft; i < _contiguousUnifiedData.Expression_Shapes.Length; i++ )
++        for ( int i = (int)UnifiedExpressions.BrowOuterUpLeft + 1; i < _contiguousUnifiedData.Expression_Shapes.Length; i++ )
+         {
+             if ( _contiguousUnifiedData.Expression_Shapes[i] != INVALID_FLOAT)
+                 UnifiedTracking.Data.Shapes[i].Weight = _contiguousUnifiedData.Expression_Shapes[i];
+diff --git a/VRCFaceTracking.Core/Services/SendCoordinator.cs b/VRCFaceTracking.Core/Services/SendCoordinator.cs
+index 18bba14..b8bed6f 100644
+--- a/VRCFaceTracking.Core/Services/SendCoordinator.cs
++++ b/VRCFaceTracking.Core/Services/SendCoordinator.cs
+@@ -1,3 +1,4 @@
++// Modified 2026 by VRCFT-Enhance contributors: configurable mixed-module coalescing budget; preserve reply-driven sending. See https://github.com/WolalaQAQ/VRCFT-Enhance
+ using Microsoft.Extensions.Logging;
+ 
+ namespace VRCFaceTracking.Core.Services;
+@@ -6,7 +7,8 @@ namespace VRCFaceTracking.Core.Services;
+ // This replaces the lazy "check for changes at 10hz" loop we were using before
+ public sealed class SendCoordinator(ParameterSenderService sender, ILogger<SendCoordinator> logger)
+ {
+-    private const int CoalesceWindowMs = 10;    // How long we're willing to wait for all modules once one has replied
++    // VRCFT 6 sends on replies. This is a maximum wait for other modules, not an output tick.
++    private static readonly int CoalesceWindowMs = OscWaitBudgets.OutputMs;
+ 
+     private readonly object _lock = new();
+     private readonly HashSet<int> _fresh = new();
+diff --git a/VRCFaceTracking.Core/TimerResolutionLease.cs b/VRCFaceTracking.Core/TimerResolutionLease.cs
+new file mode 100644
+index 0000000..83fad2a
+--- /dev/null
++++ b/VRCFaceTracking.Core/TimerResolutionLease.cs
+@@ -0,0 +1,99 @@
++// Copyright 2026 VRCFT-Enhance contributors. Licensed under the Apache License, Version 2.0.
++using System.Runtime.InteropServices;
++using Microsoft.Extensions.Logging;
++
++namespace VRCFaceTracking.Core;
++
++// Own only the process-local timer-resolution bit, never CPU throttling or priority.
++internal static class TimerResolutionLease
++{
++    private const int ProcessPowerThrottling = 4;
++    private const uint IgnoreTimerResolution = 4;
++    private static readonly object Sync = new();
++    private static PowerThrottlingState _original;
++    private static bool _started, _policyOwned, _periodOwned;
++    private static ILogger? _logger;
++
++    [StructLayout(LayoutKind.Sequential)]
++    private struct PowerThrottlingState
++    {
++        public uint Version, ControlMask, StateMask;
++    }
++
++    [DllImport("kernel32.dll", SetLastError = true)]
++    [return: MarshalAs(UnmanagedType.Bool)]
++    private static extern bool GetProcessInformation(nint process, int kind, ref PowerThrottlingState information, uint size);
++    [DllImport("kernel32.dll", SetLastError = true)]
++    [return: MarshalAs(UnmanagedType.Bool)]
++    private static extern bool SetProcessInformation(nint process, int kind, ref PowerThrottlingState information, uint size);
++
++    internal static void Acquire(ILogger logger)
++    {
++        if (!OperatingSystem.IsWindows()) return;
++        lock (Sync)
++        {
++            if (_started) return;
++            _started = true; _logger = logger;
++            AppDomain.CurrentDomain.ProcessExit += (_, _) => Release();
++            _original = new() { Version = 1 };
++            uint size = (uint)Marshal.SizeOf<PowerThrottlingState>();
++            bool gotOriginal = GetProcessInformation(-1, ProcessPowerThrottling, ref _original, size);
++            int getError = gotOriginal ? 0 : Marshal.GetLastPInvokeError(), setError = 0;
++            if (gotOriginal)
++            {
++                var desired = _original;
++                desired.ControlMask |= IgnoreTimerResolution; desired.StateMask &= ~IgnoreTimerResolution;
++                _policyOwned = SetProcessInformation(-1, ProcessPowerThrottling, ref desired, size);
++                setError = _policyOwned ? 0 : Marshal.GetLastPInvokeError();
++            }
++            var observed = new PowerThrottlingState { Version = 1 };
++            bool gotObserved = GetProcessInformation(-1, ProcessPowerThrottling, ref observed, size);
++            int observedError = gotObserved ? 0 : Marshal.GetLastPInvokeError();
++            uint beginResult = Utils.TimeBeginPeriod(1); _periodOwned = beginResult == 0;
++            logger.LogInformation(
++                $"Timer resolution lease acquire pid={Environment.ProcessId}: GetProcessInformation={gotOriginal} error={getError} before={_original.ControlMask}/{_original.StateMask}; " +
++                $"SetProcessInformation called={gotOriginal} result={_policyOwned} error={setError}; " +
++                $"GetProcessInformation verify={gotObserved} error={observedError} observed={observed.ControlMask}/{observed.StateMask}; TimeBeginPeriod(1) result={beginResult}.");
++        }
++    }
++
++    internal static void Release()
++    {
++        lock (Sync)
++        {
++            if (!_policyOwned && !_periodOwned) return;
++            bool restoreRequested = _policyOwned, gotCurrent = false, restored = false;
++            int getError = 0, setError = 0;
++            var current = new PowerThrottlingState { Version = 1 }; var desired = current;
++            uint size = (uint)Marshal.SizeOf<PowerThrottlingState>();
++            if (restoreRequested)
++            {
++                gotCurrent = GetProcessInformation(-1, ProcessPowerThrottling, ref current, size);
++                getError = gotCurrent ? 0 : Marshal.GetLastPInvokeError();
++                if (gotCurrent)
++                {
++                    desired = current;
++                    desired.ControlMask = (current.ControlMask & ~IgnoreTimerResolution) | (_original.ControlMask & IgnoreTimerResolution);
++                    desired.StateMask = (current.StateMask & ~IgnoreTimerResolution) | (_original.StateMask & IgnoreTimerResolution);
++                    restored = SetProcessInformation(-1, ProcessPowerThrottling, ref desired, size);
++                    setError = restored ? 0 : Marshal.GetLastPInvokeError();
++                    if (restored) _policyOwned = false;
++                }
++            }
++            var observed = new PowerThrottlingState { Version = 1 };
++            bool gotObserved = GetProcessInformation(-1, ProcessPowerThrottling, ref observed, size);
++            int observedError = gotObserved ? 0 : Marshal.GetLastPInvokeError();
++            bool endRequested = _periodOwned; uint endResult = 0;
++            if (endRequested)
++            {
++                endResult = Utils.TimeEndPeriod(1);
++                if (endResult == 0) _periodOwned = false;
++            }
++            _logger?.LogInformation(
++                $"Timer resolution lease release pid={Environment.ProcessId}: restoreRequested={restoreRequested} GetProcessInformation={gotCurrent} error={getError} current={current.ControlMask}/{current.StateMask}; " +
++                $"SetProcessInformation called={restoreRequested && gotCurrent} result={restored} error={setError} desired={desired.ControlMask}/{desired.StateMask}; " +
++                $"GetProcessInformation verify={gotObserved} error={observedError} observed={observed.ControlMask}/{observed.StateMask}; " +
++                $"TimeEndPeriod(1) called={endRequested} result={endResult}; policyRestorePending={_policyOwned} periodEndPending={_periodOwned}.");
++        }
++    }
++}
+diff --git a/VRCFaceTracking.Core/UnifiedTracking.cs b/VRCFaceTracking.Core/UnifiedTracking.cs
+index 22b5fb6..a2792e9 100644
+--- a/VRCFaceTracking.Core/UnifiedTracking.cs
++++ b/VRCFaceTracking.Core/UnifiedTracking.cs
+@@ -1,4 +1,5 @@
+-﻿using VRCFaceTracking.Core.Params;
++﻿// Modified 2026 by VRCFT-Enhance contributors: serialize IPC application with parameter evaluation and native blob capture. See https://github.com/WolalaQAQ/VRCFT-Enhance
++using VRCFaceTracking.Core.Params;
+ using VRCFaceTracking.Core.Params.Data;
+ using VRCFaceTracking.Core.Params.Expressions;
+ using VRCFaceTracking.Core.Params.Expressions.Legacy.Eye;
+@@ -27,6 +28,8 @@ public class UnifiedTracking
+     /// </summary>
+     public static UnifiedTrackingData Data = new();
+ 
++    internal static readonly object HostDataSync = new();
++
+     /// <summary>
+     /// Container of all features and functions that mutates the incoming expression data into output data suitable for driving Unified Expressions.
+     /// </summary>
+@@ -66,11 +69,20 @@ public class UnifiedTracking
+     /// <summary>
+     /// Central update function that updates all output parameter data and pushes the latest expressions from VRCFaceTracking modules into the internal expressions buffer.
+     /// </summary>
+-    public static async Task UpdateData(CancellationToken ct) => OnUnifiedDataUpdated.Invoke(await Task.Run(() => Mutator.MutateData(Data), ct));
++    public static async Task UpdateData(CancellationToken ct)
++    {
++        await Task.Run(UpdateDataSync, ct);
++    }
+ 
+     /// <summary>
+     /// Synchronous alternative to UpdateData to avoid Task.Run overhead
+     /// (might replace original with this in the future depending on results)
+     /// </summary>
+-    public static void UpdateDataSync() => OnUnifiedDataUpdated.Invoke(Mutator.MutateData(Data));
+-}
+\ No newline at end of file
++    public static void UpdateDataSync()
++    {
++        lock (HostDataSync)
++        {
++            OnUnifiedDataUpdated.Invoke(Mutator.MutateData(Data));
++        }
++    }
++}
+diff --git a/VRCFaceTracking.ModuleProcess/ModuleProcessMain.Sandbox.cs b/VRCFaceTracking.ModuleProcess/ModuleProcessMain.Sandbox.cs
+index 5862f27..4006c3d 100644
+--- a/VRCFaceTracking.ModuleProcess/ModuleProcessMain.Sandbox.cs
++++ b/VRCFaceTracking.ModuleProcess/ModuleProcessMain.Sandbox.cs
+@@ -1,4 +1,7 @@
++// Modified 2026 by VRCFT-Enhance contributors: thread-safe replies, completed snapshots and serialized teardown. See https://github.com/WolalaQAQ/VRCFT-Enhance
++using System.Collections.Concurrent;
+ using Microsoft.Extensions.Logging;
++using VRCFaceTracking.Core;
+ using VRCFaceTracking.Core.Library;
+ using VRCFaceTracking.Core.Sandboxing;
+ using VRCFaceTracking.Core.Sandboxing.IPC;
+@@ -12,8 +15,25 @@ public partial class ModuleProcessMain
+ 
+     public static VrcftSandboxClient Client;
+ 
+-    private static readonly Queue<IpcPacket> _packetsToSend = new();
++    private static readonly ConcurrentQueue<IpcPacket> _packetsToSend = new();
+     private static Timer? _connectionTimer;
++    private static Thread? _moduleUpdateThread;
++    private static readonly object _teardownSync = new();
++    private static bool _moduleTornDown;
++
++    private static void TeardownModule()
++    {
++        lock (_teardownSync)
++        {
++            if (_moduleTornDown) return;
++            DefModuleAssembly._updateCts?.Cancel();
++            if (_moduleUpdateThread is { IsAlive: true } && !_moduleUpdateThread.Join(1000))
++                throw new TimeoutException("Module Update did not stop; skipped concurrent Teardown and snapshot publication.");
++            DefModuleAssembly.TrackingModule.Teardown();
++            ReplyUpdatePacket.PublishCompletedSnapshot();
++            _moduleTornDown = true;
++        }
++    }
+ 
+     private static readonly object _callbackLock = new();
+     private static bool _shouldCallReceive = false;
+@@ -94,6 +114,7 @@ public partial class ModuleProcessMain
+         try
+         {
+             (eyeSuccess, expressionSuccess) = DefModuleAssembly.TrackingModule.Initialize(pkt.eyeAvailable, pkt.expressionAvailable);
++            ReplyUpdatePacket.PublishCompletedSnapshot();
+         }
+         catch (MissingMethodException)
+         {
+@@ -107,18 +128,20 @@ public partial class ModuleProcessMain
+         }
+ 
+         DefModuleAssembly._updateCts = new CancellationTokenSource();
+-        var thread = new Thread(() =>
++        _moduleTornDown = false;
++        _moduleUpdateThread = new Thread(() =>
+         {
+             while (!DefModuleAssembly._updateCts.IsCancellationRequested)
+             {
+                 DefModuleAssembly.TrackingModule.Update();
++                ReplyUpdatePacket.PublishCompletedSnapshot();
+             }
+         })
+         {
+             // Background so the CLR can terminate even if the module blocks in native code (looking at you, Vive).
+             IsBackground = true,
+         };
+-        thread.Start();
++        _moduleUpdateThread.Start();
+ 
+         _packetsToSend.Enqueue(new ReplyInitPacket
+         {
+@@ -135,13 +158,17 @@ public partial class ModuleProcessMain
+         DefModuleAssembly._updateCts?.Cancel();
+         try
+         {
+-            DefModuleAssembly.TrackingModule.Teardown();
++            TeardownModule();
+         }
+         catch (Exception e)
+         {
+             Logger.LogWarning("Tracking module failed to cleanly shut down.");
+             Logger.LogError(e.ToString());
+         }
++        finally
++        {
++            TimerResolutionLease.Release();
++        }
+ 
+         Logger.LogInformation("Cancelled Update Threads");
+ 
+@@ -159,7 +186,6 @@ public partial class ModuleProcessMain
+         {
+             while (_packetsToSend.TryDequeue(out var pkt))
+             {
+-                if (pkt == null) continue;
+                 Client.SendData(pkt);
+             }
+ 
+diff --git a/VRCFaceTracking.ModuleProcess/ModuleProcessMain.cs b/VRCFaceTracking.ModuleProcess/ModuleProcessMain.cs
+index dbb95d7..8660fc1 100644
+--- a/VRCFaceTracking.ModuleProcess/ModuleProcessMain.cs
++++ b/VRCFaceTracking.ModuleProcess/ModuleProcessMain.cs
+@@ -1,9 +1,11 @@
++// Modified 2026 by VRCFT-Enhance contributors: timer lease and completed-snapshot lifecycle. See https://github.com/WolalaQAQ/VRCFT-Enhance
+ using System.CommandLine;
+ using System.Diagnostics;
+ using Microsoft.Extensions.DependencyInjection;
+ using Microsoft.Extensions.Logging;
+ using VRCFaceTracking.Core;
+ using VRCFaceTracking.Core.Params.Expressions;
++using VRCFaceTracking.Core.Sandboxing.IPC;
+ 
+ namespace VRCFaceTracking.ModuleProcess;
+ 
+@@ -19,6 +21,7 @@ public partial class ModuleProcessMain
+     {
+         AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+         {
++            TimerResolutionLease.Release();
+             Logger.LogInformation("Received SIGTERM");
+             WaitForPackets = false;
+             DefModuleAssembly._updateCts?.Cancel();
+@@ -66,6 +69,7 @@ public partial class ModuleProcessMain
+         }
+         finally
+         {
++            TimerResolutionLease.Release();
+             Client?.Dispose();
+         }
+     }
+@@ -91,17 +95,14 @@ public partial class ModuleProcessMain
+         LoggerFactory = serviceProvider.GetService<ILoggerFactory>();
+         Logger = LoggerFactory!.CreateLogger<ModuleProcessMain>();
+ 
++        TimerResolutionLease.Acquire(Logger);
++
+         StartParentWatchdog(parentPid);
+ 
+         InitializeUnifiedTrackingToInvalidState();
+ 
+         ConnectSandboxClient(serverPortNumber, modulePath);
+ 
+-        if (OperatingSystem.IsWindows())
+-        {
+-            Core.Utils.TimeBeginPeriod(1);
+-        }
+-
+         DefModuleAssembly = new ModuleAssembly(Logger, LoggerFactory, modulePath);
+         Logger.LogInformation("Initializing {module}", Path.GetFileNameWithoutExtension(DefModuleAssembly.ModulePath));
+ 
+@@ -109,10 +110,7 @@ public partial class ModuleProcessMain
+ 
+         DefModuleAssembly._updateCts.Cancel();
+ 
+-        if (OperatingSystem.IsWindows())
+-        {
+-            Core.Utils.TimeEndPeriod(1);
+-        }
++        TimerResolutionLease.Release();
+ 
+         Environment.Exit(ModuleProcessExitCodes.OK);
+         return ModuleProcessExitCodes.OK;
+@@ -142,8 +140,7 @@ public partial class ModuleProcessMain
+             {
+                 try
+                 {
+-                    DefModuleAssembly?._updateCts?.Cancel();
+-                    DefModuleAssembly?.TrackingModule?.Teardown();
++                    TeardownModule();
+                 }
+                 catch (Exception) { }
+             })
+@@ -153,6 +150,7 @@ public partial class ModuleProcessMain
+             teardownThread.Start();
+             teardownThread.Join(TimeSpan.FromSeconds(10));
+ 
++            TimerResolutionLease.Release();
+             Process.GetCurrentProcess().Kill();
+         })
+         {
+@@ -188,5 +186,6 @@ public partial class ModuleProcessMain
+         {
+             UnifiedTracking.Data.Shapes[i].Weight = 0xFFFFFFFF;
+         }
++        ReplyUpdatePacket.PublishCompletedSnapshot();
+     }
+ }

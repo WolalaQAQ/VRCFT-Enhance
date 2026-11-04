@@ -1,0 +1,16 @@
+{
+  "vrcft5": {
+    "commit": "7add14873e398c4095d06913cdeee7a01fc43fab",
+    "assemblyVersion": "5.4.5.0",
+    "patch": "VRCFT-Enhance-7add148.patch",
+    "suffix": "7add148",
+    "native": false
+  },
+  "vrcft6": {
+    "commit": "3d36379253d26961560d84acecd01d509aea467a",
+    "assemblyVersion": "6.0.0.0",
+    "patch": "VRCFT-Enhance-3d36379.patch",
+    "suffix": "vrcft6-3d36379",
+    "native": true
+  }
+}

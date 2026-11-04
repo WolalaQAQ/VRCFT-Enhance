@@ -22,18 +22,20 @@ concurrency:
 env:
   RELEASE_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name || '') }}
   UPSTREAM_REPOSITORY: https://github.com/benaclejames/VRCFaceTracking.git
-  UPSTREAM_COMMIT: 7add14873e398c4095d06913cdeee7a01fc43fab
-  PATCH_FILE: VRCFT-Enhance-7add148.patch
-  BUILD_OUTPUT: upstream\VRCFaceTracking.ModuleProcess\bin\x64\Release\net10.0-windows10.0.22621.0\win-x64
 
 jobs:
   build:
-    name: Apply the patch to VRCFaceTracking and build
+    name: Build and test ${{ matrix.target }}
     runs-on: windows-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [vrcft5, vrcft6]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.sha }}
           persist-credentials: false
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -44,54 +46,32 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $version = (Get-Content VERSION -Raw).Trim()
+          if ($env:RELEASE_TAG -and $env:RELEASE_TAG -cne "v$version") { throw 'Release tag does not match the build version' }
+          foreach ($file in Get-ChildItem tools -Filter '*.ps1' -Recurse) {
+            $tokens = $null; $errors = $null
+            [Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count) { throw ($errors | Out-String) }
+          }
+          $target = (Get-Content targets.json -Raw | ConvertFrom-Json).'${{ matrix.target }}'
           git init upstream
           git -C upstream remote add origin $env:UPSTREAM_REPOSITORY
-          git -C upstream -c protocol.version=2 fetch --depth 1 origin $env:UPSTREAM_COMMIT
+          git -C upstream -c protocol.version=2 fetch --depth 1 origin $target.commit
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned source fetch failed' }
           git -C upstream checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned source checkout failed' }
           git -C upstream rev-parse HEAD
 
-      - name: Apply the patch
+      - name: Apply, build, test and package the patch
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $patch = Join-Path $env:GITHUB_WORKSPACE $env:PATCH_FILE
-          git -C upstream apply --check --ignore-whitespace $patch
-          git -C upstream apply --ignore-whitespace $patch
-          git -C upstream status --short
-
-      - name: Build Core and ModuleProcess
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $version = (Get-Content VERSION -Raw).Trim()
-          dotnet build upstream\VRCFaceTracking.ModuleProcess\VRCFaceTracking.ModuleProcess.csproj `
-            -c Release -p:Platform=x64 -p:InformationalVersion="5.4.5.0-vrcft-enhance-$version"
-          foreach ($name in 'VRCFaceTracking.Core.dll', 'VRCFaceTracking.ModuleProcess.dll') {
-            $path = Join-Path $env:BUILD_OUTPUT $name
-            if (-not (Test-Path $path)) { throw "Missing build output: $name" }
-            Write-Host "$name $((Get-Item $path).Length) bytes $((Get-Item $path).VersionInfo.ProductVersion)"
-          }
-
-      - name: Package the patched DLLs
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $version = (Get-Content VERSION -Raw).Trim()
-          $stage = "package\VRCFT-Enhance-$version"
-          New-Item -ItemType Directory -Force $stage | Out-Null
-          Copy-Item "$env:BUILD_OUTPUT\VRCFaceTracking.Core.dll" $stage
-          Copy-Item "$env:BUILD_OUTPUT\VRCFaceTracking.ModuleProcess.dll" $stage
-          Copy-Item LICENSE, INSTALL.txt $stage
-          $zip = "VRCFT-Enhance-$version-7add148.zip"
-          Compress-Archive -Path "$stage\*" -DestinationPath $zip
-          Write-Host "Wrote $zip ($((Get-Item $zip).Length) bytes)"
-          Expand-Archive $zip -DestinationPath verify-zip
-          Get-ChildItem verify-zip | Select-Object Name, Length
+          ./tools/build.ps1 -Target '${{ matrix.target }}' -UpstreamSource upstream -ArtifactsPath artifacts/package
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: dll-package
-          path: VRCFT-Enhance-*-7add148.zip
+          name: dll-package-${{ matrix.target }}
+          path: artifacts/package/VRCFT-Enhance-*.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -111,7 +91,8 @@ jobs:
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: dll-package
+          pattern: dll-package-*
+          merge-multiple: true
           path: assets
 
       - name: Create the release from the changelog, or refresh its assets
