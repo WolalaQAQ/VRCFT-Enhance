@@ -81,6 +81,16 @@ The script reads the exact commit from [targets.json](targets.json), archives it
 
 CI builds and tests both targets before publishing separately named packages. Only the two patched DLLs are distributed, not a replacement SDK or native OSC library. Patch and upstream versions are also stamped into the DLL product version. The test suite does not cover a real Cymple module or Avatar rendering.
 
+## Community
+
+Join the Pico-Enhance community for help, discussion and release announcements.
+
+<a href="https://discord.gg/ueSEydeVD8"><img src="https://img.shields.io/badge/Discord-Join%20Pico--Enhance-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Pico-Enhance on Discord"></a>
+
+**QQ group:** 1129699813. Scan the code below with QQ to join.
+
+<img src="assets/community/qq-group-qr.png" alt="Pico-Enhance QQ group QR code" width="240">
+
 ## License
 
 VRCFaceTracking is copyright benaclejames and released under [Apache License 2.0](LICENSE). These patches use the same license; modified upstream files carry modification notices.

@@ -81,6 +81,16 @@ pwsh -NoProfile -File tools/build.ps1 -Target vrcft5 -UpstreamSource upstream
 
 CI 在发布前分别构建和测试两个目标，生成不同名称的安装包，只分发两个补丁 DLL，不替换 SDK 或原生 OSC 库。DLL 产品版本同时记录补丁版本和上游提交。测试不包含真实 Cymple 模块或 Avatar 渲染。
 
+## 社区
+
+使用求助、交流和版本更新通知，欢迎加入 Pico-Enhance 社区。
+
+<a href="https://discord.gg/ueSEydeVD8"><img src="https://img.shields.io/badge/Discord-Join%20Pico--Enhance-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="加入 Pico-Enhance Discord"></a>
+
+**QQ 群：** 1129699813，用 QQ 扫描下方二维码即可加入。
+
+<img src="assets/community/qq-group-qr.png" alt="Pico-Enhance QQ 群二维码" width="240">
+
 ## 许可证
 
 VRCFaceTracking 版权归 benaclejames，使用 [Apache License 2.0](LICENSE)。本补丁采用同一许可证，修改过的上游文件均带修改说明。
